@@ -64,6 +64,9 @@ static bool:g_bTF2AttributesIsRunning = false;
 #define MIN_INT                 -2147483648    //  PriorityCenterText
 #define MAX_DIGITS              12             //  10 + \0 for IntToString. And negative signs.
 
+// Define a max percentage for the displayed healthbar (Alpha testing, integrating from FF2)
+#define HEALTHBAR_MAX 255
+
 // TF2 Weapon Loadout Slots
 enum
 {
@@ -528,6 +531,8 @@ static tf_dropped_weapon_lifetime;
 static Float:tf_feign_death_activate_damage_scale, Float:tf_feign_death_damage_scale, Float:tf_stealth_damage_reduction, Float:tf_feign_death_duration, Float:tf_feign_death_speed_duration; // Cloak damage fixes
 static defaulttakedamagetype;
 
+new healthBar=-1;
+
 static const String:haleversiontitles[][] =     //the last line of this is what determines the displayed plugin version
 {
     "1.0", "1.1", "1.11", "1.12", "1.2", "1.22", "1.23", "1.24", "1.25", "1.26", "Christian Brutal Sniper", "1.28", "1.29", "1.30", "1.31", "1.32", "1.33", "1.34", "1.35", "1.35_3", "1.36", "1.36", "1.36", "1.36", "1.36", "1.36", "1.362", "1.363", "1.364", "1.365", "1.366", "1.367", "1.368", "1.369", "1.369", "1.369", "1.37", "1.37b", "1.38", "1.38", "1.39beta", "1.39beta", "1.39beta", "1.39c", "1.39c", "1.39c", "1.40", "1.41", "1.42", "1.43", "1.43", "1.43", "1.44", "1.44", "1.45", "1.45", "1.45", "1.45", "1.45", "1.46", "1.46", "1.46", "1.47", "1.47", "1.48", "1.48", "1.49", "1.50",
@@ -939,6 +944,8 @@ public OnConfigsExecuted()
         SetConVarFloat(FindConVar("tf_stealth_damage_reduction"), 0.1);
         SetConVarFloat(FindConVar("tf_feign_death_duration"), 7.0);
         SetConVarFloat(FindConVar("tf_feign_death_speed_duration"), 0.0);
+
+	FindHealthBar();
 
 #if defined _steamtools_included
         if (g_bSteamToolsIsRunning)
@@ -2047,6 +2054,7 @@ public Action:event_round_end(Handle:event, const String:name[], bool:dontBroadc
     {
         SetEntProp(Hale, Prop_Send, "m_bGlowEnabled", 0);
         GlowTimer = 0.0;
+        SDKUnhook(Hale, SDKHook_GetMaxHealth, OnGetMaxHealth);
         if (IsPlayerAlive(Hale))
         {
             decl String:translation[32];
@@ -2253,8 +2261,8 @@ public Action:StartHaleTimer(Handle:hTimer)
         HaleHealthMax = 2048;
     }
 
+    SDKHook(Hale, SDKHook_GetMaxHealth, OnGetMaxHealth);  //Temporary:  Used to prevent boss overheal
     SetEntProp(Hale, Prop_Data, "m_iMaxHealth", HaleHealthMax);
-    SetEntityHealth(Hale, HaleHealthMax);
     HaleHealth = HaleHealthMax;
     HaleHealthLast = HaleHealth;
     CreateTimer(0.2, CheckAlivePlayers);
@@ -4783,6 +4791,7 @@ public Action:event_player_death(Handle:event, const String:name[], bool:dontBro
         }
         if (HaleHealth < 0)
             HaleHealth = 0;
+        UpdateHealthBar();
         ForceTeamWin(OtherTeam);
         return Plugin_Continue;
     }
@@ -5235,6 +5244,44 @@ public Action:event_hurt(Handle:event, const String:name[], bool:dontBroadcast)
     if (HaleRage > RageDMG)
         HaleRage = RageDMG;
     return Plugin_Continue;
+}
+
+FindHealthBar()
+{
+	healthBar=FindEntityByClassname(-1, HEALTHBAR_CLASS);
+	if(!IsValidEntity(healthBar))
+	{
+		healthBar=CreateEntityByName(HEALTHBAR_CLASS);
+	}
+}
+
+UpdateHealthBar()
+{
+        if(!Enabled || !IsValidEntity(healthBar) || CheckRoundState()==-1)
+        {
+                return;
+        }
+
+        new healthAmount, maxHealthAmount, healthPercent;
+        if(IsValidClient(Hale) && IsPlayerAlive(Hale))
+        {
+                healthAmount+=HaleHealth-HaleHealthMax;
+                maxHealthAmount+=HaleHealthMax;
+        }
+
+        if(Hale)
+        {
+                healthPercent=RoundToCeil(float(healthAmount)/float(maxHealthAmount)*float(HEALTHBAR_MAX));
+                if(healthPercent>HEALTHBAR_MAX)
+                {
+                	healthPercent=HEALTHBAR_MAX;
+                }
+                else if(healthPercent<=0)
+                {
+                        healthPercent=1;
+                }
+        }
+        SetEntProp(healthBar, Prop_Send, HEALTHBAR_PROPERTY, healthPercent);
 }
 
 #if defined _rtd_included
