@@ -66,6 +66,8 @@ static bool:g_bTF2AttributesIsRunning = false;
 
 // Define a max percentage for the displayed healthbar (Alpha testing, integrating from FF2)
 #define HEALTHBAR_MAX 255
+#define HEALTHBAR_CLASS "monster_resource"
+#define HEALTHBAR_PROPERTY "m_iBossHealthPercentageByte"
 
 // TF2 Weapon Loadout Slots
 enum
@@ -202,7 +204,7 @@ static const String:HaleMatsV2[][] = {
 //HaleKSpree2 - this line is broken and unused
 #define HaleKSpree2             "saxton_hale/saxton_hale_responce_4.wav"
 
-//Market gardener
+// Market gardener
 #define GardenedSound           "saxton_hale/gardener.wav"
 
 //===New responces===
@@ -2261,10 +2263,10 @@ public Action:StartHaleTimer(Handle:hTimer)
         HaleHealthMax = 2048;
     }
 
-    SDKHook(Hale, SDKHook_GetMaxHealth, OnGetMaxHealth);  //Temporary:  Used to prevent boss overheal
     SetEntProp(Hale, Prop_Data, "m_iMaxHealth", HaleHealthMax);
     HaleHealth = HaleHealthMax;
     HaleHealthLast = HaleHealth;
+    SDKHook(Hale, SDKHook_GetMaxHealth, OnGetMaxHealth);  //Temporary:  Used to prevent boss overheal
     CreateTimer(0.2, CheckAlivePlayers);
     CreateTimer(0.2, HaleTimer, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
     CreateTimer(0.2, StartRound);
@@ -5257,7 +5259,7 @@ FindHealthBar()
 
 UpdateHealthBar()
 {
-        if(!Enabled || !IsValidEntity(healthBar) || CheckRoundState()==-1)
+        if(!cvarEnabled || !IsValidEntity(healthBar) || VSHRoundState==VSHRState_Waiting)
         {
                 return;
         }
@@ -5265,8 +5267,8 @@ UpdateHealthBar()
         new healthAmount, maxHealthAmount, healthPercent;
         if(IsValidClient(Hale) && IsPlayerAlive(Hale))
         {
-                healthAmount+=HaleHealth-HaleHealthMax;
-                maxHealthAmount+=HaleHealthMax;
+                healthAmount = HaleHealth;
+                maxHealthAmount = HaleHealthMax;
         }
 
         if(Hale)
@@ -5282,6 +5284,29 @@ UpdateHealthBar()
                 }
         }
         SetEntProp(healthBar, Prop_Send, HEALTHBAR_PROPERTY, healthPercent);
+}
+
+public Action:OnGetMaxHealth(client, &maxHealth)
+{
+	if(cvarEnabled && IsBoss(client))
+	{
+		SetEntityHealth(client, HaleHealth);
+		maxHealth=HaleHealthMax;
+		return Plugin_Changed;
+	}
+	return Plugin_Continue;
+}
+
+stock bool:IsBoss(client)
+{
+	if(IsValidClient(client))
+	{
+		if(Hale==client)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 #if defined _rtd_included
