@@ -64,6 +64,11 @@ static bool:g_bTF2AttributesIsRunning = false;
 #define MIN_INT                 -2147483648    //  PriorityCenterText
 #define MAX_DIGITS              12             //  10 + \0 for IntToString. And negative signs.
 
+// Define a max percentage for the displayed healthbar (Alpha testing, integrating from FF2)
+#define HEALTHBAR_MAX 255
+#define HEALTHBAR_CLASS "monster_resource"
+#define HEALTHBAR_PROPERTY "m_iBossHealthPercentageByte"
+
 // TF2 Weapon Loadout Slots
 enum
 {
@@ -199,7 +204,7 @@ static const String:HaleMatsV2[][] = {
 //HaleKSpree2 - this line is broken and unused
 #define HaleKSpree2             "saxton_hale/saxton_hale_responce_4.wav"
 
-//Market gardener
+// Market gardener
 #define GardenedSound           "saxton_hale/gardener.wav"
 
 //===New responces===
@@ -527,6 +532,8 @@ static Float:tf_scout_hype_pep_max;
 static tf_dropped_weapon_lifetime;
 static Float:tf_feign_death_activate_damage_scale, Float:tf_feign_death_damage_scale, Float:tf_stealth_damage_reduction, Float:tf_feign_death_duration, Float:tf_feign_death_speed_duration; // Cloak damage fixes
 static defaulttakedamagetype;
+
+new healthBar=-1;
 
 static const String:haleversiontitles[][] =     //the last line of this is what determines the displayed plugin version
 {
@@ -939,6 +946,8 @@ public OnConfigsExecuted()
         SetConVarFloat(FindConVar("tf_stealth_damage_reduction"), 0.1);
         SetConVarFloat(FindConVar("tf_feign_death_duration"), 7.0);
         SetConVarFloat(FindConVar("tf_feign_death_speed_duration"), 0.0);
+
+	FindHealthBar();
 
 #if defined _steamtools_included
         if (g_bSteamToolsIsRunning)
@@ -2047,6 +2056,7 @@ public Action:event_round_end(Handle:event, const String:name[], bool:dontBroadc
     {
         SetEntProp(Hale, Prop_Send, "m_bGlowEnabled", 0);
         GlowTimer = 0.0;
+        SDKUnhook(Hale, SDKHook_GetMaxHealth, OnGetMaxHealth);
         if (IsPlayerAlive(Hale))
         {
             decl String:translation[32];
@@ -2254,9 +2264,9 @@ public Action:StartHaleTimer(Handle:hTimer)
     }
 
     SetEntProp(Hale, Prop_Data, "m_iMaxHealth", HaleHealthMax);
-    SetEntityHealth(Hale, HaleHealthMax);
     HaleHealth = HaleHealthMax;
     HaleHealthLast = HaleHealth;
+    SDKHook(Hale, SDKHook_GetMaxHealth, OnGetMaxHealth);  //Temporary:  Used to prevent boss overheal
     CreateTimer(0.2, CheckAlivePlayers);
     CreateTimer(0.2, HaleTimer, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
     CreateTimer(0.2, StartRound);
@@ -4783,6 +4793,7 @@ public Action:event_player_death(Handle:event, const String:name[], bool:dontBro
         }
         if (HaleHealth < 0)
             HaleHealth = 0;
+        UpdateHealthBar();
         ForceTeamWin(OtherTeam);
         return Plugin_Continue;
     }
@@ -5235,6 +5246,67 @@ public Action:event_hurt(Handle:event, const String:name[], bool:dontBroadcast)
     if (HaleRage > RageDMG)
         HaleRage = RageDMG;
     return Plugin_Continue;
+}
+
+FindHealthBar()
+{
+	healthBar=FindEntityByClassname(-1, HEALTHBAR_CLASS);
+	if(!IsValidEntity(healthBar))
+	{
+		healthBar=CreateEntityByName(HEALTHBAR_CLASS);
+	}
+}
+
+UpdateHealthBar()
+{
+        if(!cvarEnabled || !IsValidEntity(healthBar) || VSHRoundState==VSHRState_Waiting)
+        {
+                return;
+        }
+
+        new healthAmount, maxHealthAmount, healthPercent;
+        if(IsValidClient(Hale) && IsPlayerAlive(Hale))
+        {
+                healthAmount = HaleHealth;
+                maxHealthAmount = HaleHealthMax;
+        }
+
+        if(Hale)
+        {
+                healthPercent=RoundToCeil(float(healthAmount)/float(maxHealthAmount)*float(HEALTHBAR_MAX));
+                if(healthPercent>HEALTHBAR_MAX)
+                {
+                	healthPercent=HEALTHBAR_MAX;
+                }
+                else if(healthPercent<=0)
+                {
+                        healthPercent=1;
+                }
+        }
+        SetEntProp(healthBar, Prop_Send, HEALTHBAR_PROPERTY, healthPercent);
+}
+
+public Action:OnGetMaxHealth(client, &maxHealth)
+{
+	if(cvarEnabled && IsBoss(client))
+	{
+		SetEntityHealth(client, HaleHealth);
+		maxHealth=HaleHealthMax;
+		return Plugin_Changed;
+	}
+	return Plugin_Continue;
+}
+
+stock bool:IsBoss(client)
+{
+	if(IsValidClient(client))
+	{
+		if(Hale==client)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 #if defined _rtd_included
